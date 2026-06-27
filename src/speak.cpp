@@ -1,10 +1,16 @@
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 
 #include <dirent.h>
 
 #include "sherpa-onnx/c-api/c-api.h"
+
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
 
 static std::string find_onnx(const std::string & dir) {
     DIR * d = opendir(dir.c_str());
@@ -21,10 +27,55 @@ static std::string find_onnx(const std::string & dir) {
     return found;
 }
 
+struct PlaybackData {
+    const float * samples;
+    ma_uint64 total;
+    std::atomic<ma_uint64> cursor;
+};
+
+static void data_callback(ma_device * device, void * output, const void * input, ma_uint32 frames) {
+    (void) input;
+    PlaybackData * pd = static_cast<PlaybackData *>(device->pUserData);
+    float * out = static_cast<float *>(output);
+    const ma_uint64 cur = pd->cursor.load(std::memory_order_relaxed);
+    const ma_uint64 remaining = pd->total > cur ? pd->total - cur : 0;
+    const ma_uint32 n = frames < remaining ? frames : static_cast<ma_uint32>(remaining);
+    for (ma_uint32 i = 0; i < n; ++i) out[i] = pd->samples[cur + i];
+    for (ma_uint32 i = n; i < frames; ++i) out[i] = 0.0f;
+    pd->cursor.store(cur + n, std::memory_order_relaxed);
+}
+
+static void play_audio(const float * samples, int n, int sample_rate) {
+    PlaybackData pd;
+    pd.samples = samples;
+    pd.total = static_cast<ma_uint64>(n);
+    pd.cursor.store(0, std::memory_order_relaxed);
+
+    ma_device_config config = ma_device_config_init(ma_device_type_playback);
+    config.playback.format   = ma_format_f32;
+    config.playback.channels = 1;
+    config.sampleRate        = static_cast<ma_uint32>(sample_rate);
+    config.dataCallback      = data_callback;
+    config.pUserData         = &pd;
+
+    ma_device device;
+    if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
+        fprintf(stderr, "could not open an audio device for playback\n");
+        return;
+    }
+    ma_device_start(&device);
+    while (pd.cursor.load(std::memory_order_relaxed) < pd.total) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    ma_device_uninit(&device);
+}
+
 int main(int argc, char ** argv) {
     std::string dir, text, out = "speak.wav";
     int sid = 0;
     float speed = 1.0f;
+    bool play = false;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "-k" && i + 1 < argc) dir = argv[++i];
@@ -32,9 +83,10 @@ int main(int argc, char ** argv) {
         else if (a == "-o" && i + 1 < argc) out = argv[++i];
         else if (a == "-v" && i + 1 < argc) sid = std::stoi(argv[++i]);
         else if (a == "-s" && i + 1 < argc) speed = std::stof(argv[++i]);
+        else if (a == "--play") play = true;
     }
     if (dir.empty() || text.empty()) {
-        printf("usage: sussurro-speak -k <voice-dir> -t \"texte\" [-o out.wav] [-v sid=0] [-s speed=1.0]\n");
+        printf("usage: sussurro-speak -k <voice-dir> -t \"texte\" [-o out.wav] [-v sid=0] [-s speed=1.0] [--play]\n");
         return 1;
     }
 
@@ -82,6 +134,8 @@ int main(int argc, char ** argv) {
     SherpaOnnxWriteWave(audio->samples, audio->n, audio->sample_rate, out.c_str());
     printf("wrote %s  (%.1f s @ %d Hz)\n", out.c_str(),
            (double) audio->n / audio->sample_rate, audio->sample_rate);
+
+    if (play) play_audio(audio->samples, audio->n, audio->sample_rate);
 
     SherpaOnnxDestroyOfflineTtsGeneratedAudio(audio);
     SherpaOnnxDestroyOfflineTts(tts);

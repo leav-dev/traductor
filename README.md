@@ -1,20 +1,19 @@
 # sussurro
 
-Offline neural machine translation **and voice** for Romance languages, built from scratch on [ggml](https://github.com/ggml-org/ggml). 
-Italian → French, fully on-device: no server, no network at runtime. 
+Offline neural machine translation **and voice** for Romance languages, built from scratch on [ggml](https://github.com/ggml-org/ggml). Italian → French, fully on-device: no server, no network at runtime. 
 
 The name is Italian for *whisper*.
 
-## Status — v0.4
+## Status — v0.5
 
-Three legs work, each as its own tool:
+A working offline **voice-to-voice interpreter**: speak Italian, hear French — and every stage is also usable on its own.
 
 - **Translate** — Italian text → French. Encoder–decoder Transformer (OPUS-MT / Marian architecture) reimplemented on ggml, with greedy and beam-search decoding, an incremental KV cache, sentence splitting, and q8_0 / q4_0 / f16 weights.
-- **Listen** — Italian speech → text via [whisper.cpp](https://github.com/ggml-org/whisper.cpp), then translated.
-- **Speak** — French text → a French voice via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) running a Piper voice.
+- **Listen** — Italian speech → text via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
+- **Speak** — French text → a French voice via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) running a Piper voice, played back through [miniaudio](https://github.com/mackron/miniaudio).
+- **Loop** — `scripts/loop.sh` chains all three: Italian audio in → French spoken out.
 
-Everything runs locally (Metal + Accelerate on Apple Silicon). 
-Chaining the three legs into a single voice→voice loop is next (see Roadmap).
+Everything runs locally (Metal + Accelerate on Apple Silicon). The translation core is ggml; the text-to-speech leg uses ONNX (sherpa-onnx); audio playback is portable (miniaudio: CoreAudio /WASAPI / ALSA).
 
 ## Components
 
@@ -22,11 +21,12 @@ Chaining the three legs into a single voice→voice loop is next (see Roadmap).
 - `sussurro` — CLI: translate Italian text → French.
 - `sussurro-quantize` — quantize a model to q8_0 / q4_0.
 - `sussurro-interpret` — Italian audio → (whisper) text → (sussurro) French text.
-- `sussurro-speak` — French text → French speech (WAV).
+- `sussurro-speak` — French text → French speech (WAV, and `--play` to play it).
+- `scripts/loop.sh` — voice-to-voice orchestrator (`interpret` → `speak --play`).
 
 ## Dependencies
 
-- **ggml** and **whisper.cpp** — git submodules under `third_party/` (both share the same ggml 0.15.2).
+- **ggml**, **whisper.cpp**, **miniaudio** — git submodules under `third_party/` (ggml is shared by the translation core and whisper.cpp; miniaudio is a single public-domain header for playback).
 - **SentencePiece** — fetched and built automatically by CMake (FetchContent, v0.2.0).
 - **sherpa-onnx** — prebuilt C API library, downloaded manually; only needed for `sussurro-speak`.
 
@@ -45,7 +45,7 @@ If you cloned without `--recurse-submodules`:
 git submodule update --init --recursive
 ```
 
-`sussurro-speak` is built only if sherpa-onnx is present (see *Text-to-speech* below); the rest of the project builds without it.
+`sussurro-speak` is built only once sherpa-onnx is present (see *Text-to-speech* below); the rest of the project builds without it.
 
 ## Models & voices
 
@@ -120,33 +120,41 @@ Transcribe + translate Italian audio (16 kHz mono WAV):
 
 Convert any audio first with `ffmpeg -i in.m4a -ar 16000 -ac 1 -c:a pcm_s16le clip.wav`.
 
-Synthesize French speech:
+Synthesize French speech (and play it):
 
 ```bash
-./build/sussurro-speak -k models/vits-piper-fr_FR-tom-medium -t "Salut, comment ça va ?" -o sortie.wav
+./build/sussurro-speak -k models/vits-piper-fr_FR-tom-medium -t "Salut, comment ça va ?" --play
 ```
 
-Flags: `-s <rate>` (>1 faster, <1 slower), `-v <speaker id>` (for multi-speaker voices).
+Flags: `-o <file.wav>` (output, default `speak.wav`), `--play` (play through the speakers),
+`-s <rate>` (>1 faster, <1 slower), `-v <speaker id>` (for multi-speaker voices).
+
+Voice-to-voice — Italian audio in, French spoken out:
+
+```bash
+./scripts/loop.sh clip.wav
+```
+
+Override the defaults with env vars if needed, e.g. `VOICE=models/vits-piper-fr_FR-upmc-medium ./scripts/loop.sh clip.wav`.
 
 ## Pipeline
 
 ```
-Italian speech ──whisper.cpp──▶ Italian text ──sussurro_core──▶ French text ──sherpa-onnx/Piper──▶ French speech
-            └────────── sussurro-interpret ──────────┘                        └─ sussurro-speak ─┘
+Italian speech ──whisper.cpp──▶ Italian text ──sussurro_core──▶ French text ──sherpa-onnx/Piper──▶ French speech ──miniaudio──▶ 🔊
+            └────────── sussurro-interpret ──────────┘                        └──────────── sussurro-speak --play ───────────┘
+                                          └──────────────────────── scripts/loop.sh ────────────────────────┘
 ```
-
-The full voice→voice loop (all three chained in one command) is the next milestone.
 
 ## Roadmap
 
-- Voice→voice: chain STT → translation → TTS into a single offline interpreter.
 - A more expressive French voice (e.g. Qwen3-TTS) if neutral read-speech isn't enough.
 - Cross-platform Tauri UI over `sussurro_core` via its C ABI.
 - More Romance language pairs.
+- Streaming / live microphone input.
 
 ## License & credits
 
-sussurro's own source: MIT.
+sussurro's own source: released under the [MIT License](LICENSE).
 
 Built on the work of others, each under its own license:
 
@@ -154,4 +162,5 @@ Built on the work of others, each under its own license:
 - **ggml** / **whisper.cpp** (ggml-org) — MIT.
 - **SentencePiece** (Google) — Apache-2.0.
 - **sherpa-onnx** (k2-fsa) — Apache-2.0.
+- **miniaudio** (David Reid) — public domain / MIT-0.
 - **Piper** voices (OHF-Voice / rhasspy) — see each voice's model card.
