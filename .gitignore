@@ -6,3 +6,4 @@ models/
 *.o
 *.a
 .DS_Store
+third_party/sherpa-onnx/

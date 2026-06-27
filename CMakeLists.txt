@@ -49,3 +49,17 @@ target_link_libraries(sussurro-quantize PRIVATE ggml)
 # speech-to-text -> translation (whisper.cpp + sussurro_core)
 add_executable(sussurro-interpret src/interpret.cpp)
 target_link_libraries(sussurro-interpret PRIVATE sussurro_core whisper)
+
+# text-to-speech via sherpa-onnx (prebuilt C API, downloaded by the user; see README)
+set(SHERPA_DIR ${CMAKE_SOURCE_DIR}/third_party/sherpa-onnx)
+if(EXISTS ${SHERPA_DIR}/include/sherpa-onnx/c-api/c-api.h)
+    add_executable(sussurro-speak src/speak.cpp)
+    target_include_directories(sussurro-speak PRIVATE ${SHERPA_DIR}/include)
+    target_link_directories(sussurro-speak PRIVATE ${SHERPA_DIR}/lib)
+    target_link_libraries(sussurro-speak PRIVATE sherpa-onnx-c-api)
+    set_target_properties(sussurro-speak PROPERTIES
+        BUILD_RPATH ${SHERPA_DIR}/lib
+        INSTALL_RPATH ${SHERPA_DIR}/lib)
+else()
+    message(STATUS "sherpa-onnx not found in third_party/sherpa-onnx; skipping sussurro-speak (TTS). See README.")
+endif()
