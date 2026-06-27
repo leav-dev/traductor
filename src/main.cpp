@@ -23,7 +23,7 @@ int main(int argc, char ** argv) {
 
     sussurro_model model;
     if (!sussurro_model_load(model_path, model)) return 1;
-    printf("sussurro 0.3.0 - loaded (vocab %u, %zu tensors, act=%s, scale=%d)\n",
+    printf("sussurro 0.5.0 - loaded (vocab %u, %zu tensors, act=%s, scale=%d)\n",
            model.hparams.vocab_size, model.tensors.size(),
            model.hparams.activation.c_str(), model.hparams.scale_embedding);
 
