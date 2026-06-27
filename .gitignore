@@ -1,9 +1,31 @@
-build/
-models/
+# build output (C++ engine)
+/build/
+
+# models & voices (downloaded or generated — large, reproducible via the README)
+/models/
 *.gguf
 *.bin
+*.onnx
+
+# audio scratch
 *.wav
+
+# compiled objects
 *.o
 *.a
+
+# python
+__pycache__/
+*.pyc
+
+# macOS
 .DS_Store
-third_party/sherpa-onnx/
+
+# prebuilt sherpa-onnx (downloaded — large)
+/third_party/sherpa-onnx/
+
+# Tauri desktop app artifacts
+/app/node_modules/
+/app/dist/
+/app/src-tauri/target/
+/app/src-tauri/gen/

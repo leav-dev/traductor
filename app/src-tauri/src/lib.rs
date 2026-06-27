@@ -1,0 +1,267 @@
+use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex};
+
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+// EDIT this to your repo's absolute path (run `pwd` at the repo root):
+const REPO: &str = "/Users/emilie/Desktop/sussurro project/sussurro";
+
+#[tauri::command(async)]
+fn speak(text: String) -> Result<String, String> {
+    let output = Command::new(format!("{REPO}/build/sussurro-speak"))
+        .current_dir(REPO)
+        .args(["-k", "models/vits-piper-fr_FR-tom-medium", "-t", &text, "--play"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+    }
+}
+
+// Italian text -> French text (via the `sussurro` CLI)
+#[tauri::command(async)]
+fn translate(text: String) -> Result<String, String> {
+    let output = Command::new(format!("{REPO}/build/sussurro"))
+        .current_dir(REPO)
+        .args(["-m", "models/opus-mt-it-fr.q8_0.gguf", "-p", &text])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("translation:") {
+            return Ok(rest.trim().to_string());
+        }
+    }
+    Err("no translation found in output".into())
+}
+
+#[derive(serde::Serialize)]
+struct Transcript {
+    italian: String,
+    french: String,
+}
+
+// Italian audio file -> { italian transcription, french translation } (via `sussurro-interpret`)
+#[tauri::command(async)]
+fn interpret(path: String) -> Result<Transcript, String> {
+    let output = Command::new(format!("{REPO}/build/sussurro-interpret"))
+        .current_dir(REPO)
+        .args([
+            "-w", "third_party/whisper.cpp/models/ggml-small.bin",
+            "-m", "models/opus-mt-it-fr.q8_0.gguf",
+            "-a", &path,
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut italian = String::new();
+    let mut french = String::new();
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("heard:") {
+            italian = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("translation:") {
+            french = rest.trim().to_string();
+        }
+    }
+    Ok(Transcript { italian, french })
+}
+
+// ---- microphone capture (native, via cpal) ----
+
+struct Recorder {
+    samples: Arc<Mutex<Vec<f32>>>,
+    in_rate: Arc<AtomicU32>,
+    recording: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
+}
+
+impl Default for Recorder {
+    fn default() -> Self {
+        Self {
+            samples: Arc::new(Mutex::new(Vec::new())),
+            in_rate: Arc::new(AtomicU32::new(0)),
+            recording: Arc::new(AtomicBool::new(false)),
+            finished: Arc::new(AtomicBool::new(true)),
+        }
+    }
+}
+
+#[tauri::command]
+fn start_recording(state: tauri::State<Recorder>) -> Result<(), String> {
+    if state.recording.load(Ordering::SeqCst) {
+        return Err("already recording".into());
+    }
+    state.samples.lock().unwrap().clear();
+    state.in_rate.store(0, Ordering::SeqCst);
+    state.recording.store(true, Ordering::SeqCst);
+    state.finished.store(false, Ordering::SeqCst);
+
+    let samples = state.samples.clone();
+    let in_rate = state.in_rate.clone();
+    let recording = state.recording.clone();
+    let finished = state.finished.clone();
+
+    std::thread::spawn(move || {
+        let host = cpal::default_host();
+        let device = match host.default_input_device() {
+            Some(d) => d,
+            None => {
+                finished.store(true, Ordering::SeqCst);
+                return;
+            }
+        };
+        let config = match device.default_input_config() {
+            Ok(c) => c,
+            Err(_) => {
+                finished.store(true, Ordering::SeqCst);
+                return;
+            }
+        };
+        in_rate.store(config.sample_rate(), Ordering::SeqCst);
+        let channels = config.channels() as usize;
+        let stream_config: cpal::StreamConfig = config.clone().into();
+        let err_fn = |e| eprintln!("audio stream error: {e}");
+
+        let samples_cb = samples.clone();
+        let recording_cb = recording.clone();
+
+        let built = match config.sample_format() {
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                stream_config,
+                move |data: &[f32], _: &_| {
+                    if !recording_cb.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let mut buf = samples_cb.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        buf.push(frame.iter().sum::<f32>() / channels as f32);
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            cpal::SampleFormat::I16 => device.build_input_stream(
+                stream_config,
+                move |data: &[i16], _: &_| {
+                    if !recording_cb.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let mut buf = samples_cb.lock().unwrap();
+                    for frame in data.chunks(channels) {
+                        let s: f32 =
+                            frame.iter().map(|&v| v as f32 / 32768.0).sum::<f32>() / channels as f32;
+                        buf.push(s);
+                    }
+                },
+                err_fn,
+                None,
+            ),
+            _ => {
+                finished.store(true, Ordering::SeqCst);
+                return;
+            }
+        };
+
+        let stream = match built {
+            Ok(s) => s,
+            Err(_) => {
+                finished.store(true, Ordering::SeqCst);
+                return;
+            }
+        };
+        if stream.play().is_err() {
+            finished.store(true, Ordering::SeqCst);
+            return;
+        }
+
+        while recording.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        drop(stream);
+        finished.store(true, Ordering::SeqCst);
+    });
+
+    Ok(())
+}
+
+#[tauri::command(async)]
+fn stop_recording(state: tauri::State<Recorder>) -> Result<String, String> {
+    state.recording.store(false, Ordering::SeqCst);
+    for _ in 0..150 {
+        if state.finished.load(Ordering::SeqCst) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let in_rate = state.in_rate.load(Ordering::SeqCst);
+    if in_rate == 0 {
+        return Err("recording never started (no input device, or mic permission denied)".into());
+    }
+    let raw = state.samples.lock().unwrap().clone();
+    if raw.is_empty() {
+        return Err("no audio captured (check microphone permission in System Settings)".into());
+    }
+
+    let samples = resample_to_16k(&raw, in_rate);
+    let path = std::env::temp_dir().join("sussurro_input.wav");
+    write_wav_16k(&path, &samples)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
+    if in_rate == 16_000 || input.is_empty() {
+        return input.to_vec();
+    }
+    let ratio = in_rate as f64 / 16_000.0;
+    let out_len = (input.len() as f64 / ratio).floor() as usize;
+    let mut out = Vec::with_capacity(out_len);
+    for i in 0..out_len {
+        let idx = i as f64 * ratio;
+        let i0 = idx.floor() as usize;
+        let i1 = (i0 + 1).min(input.len() - 1);
+        let frac = (idx - i0 as f64) as f32;
+        out.push(input[i0] * (1.0 - frac) + input[i1] * frac);
+    }
+    out
+}
+
+fn write_wav_16k(path: &std::path::Path, samples: &[f32]) -> Result<(), String> {
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: 16_000,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(path, spec).map_err(|e| e.to_string())?;
+    for &s in samples {
+        let v = (s.clamp(-1.0, 1.0) * 32767.0) as i16;
+        writer.write_sample(v).map_err(|e| e.to_string())?;
+    }
+    writer.finalize().map_err(|e| e.to_string())
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .manage(Recorder::default())
+        .invoke_handler(tauri::generate_handler![
+            speak,
+            translate,
+            interpret,
+            start_recording,
+            stop_recording
+        ])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
+}
