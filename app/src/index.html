@@ -14,20 +14,41 @@
           <span class="logo"></span>
           <span class="wordmark">sussurro</span>
         </div>
-        <div class="status-badge"><span class="dot"></span>offline</div>
       </header>
 
       <div class="langbar">
-        <div class="lang-pill">Italian</div>
+        <div class="lang-dd" id="src-dd">
+          <button class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Source language">
+            <span class="lang-current">Italiano</span>
+            <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <ul class="lang-menu" role="listbox">
+            <li role="option" data-lang="en">English</li>
+            <li role="option" data-lang="fr">Français</li>
+            <li role="option" data-lang="es">Español</li>
+            <li role="option" data-lang="it">Italiano</li>
+          </ul>
+        </div>
         <button class="swap" id="swap-btn" type="button" title="Swap languages" aria-label="Swap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10 4 7l3-3"/><path d="M4 7h12"/><path d="m17 14 3 3-3 3"/><path d="M20 17H8"/></svg>
         </button>
-        <div class="lang-pill">French</div>
+        <div class="lang-dd" id="tgt-dd">
+          <button class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-label="Target language">
+            <span class="lang-current">Français</span>
+            <svg class="caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <ul class="lang-menu" role="listbox">
+            <li role="option" data-lang="en">English</li>
+            <li role="option" data-lang="fr">Français</li>
+            <li role="option" data-lang="es">Español</li>
+            <li role="option" data-lang="it">Italiano</li>
+          </ul>
+        </div>
       </div>
 
       <section class="card card-in">
-        <div class="card-label">ITALIAN</div>
-        <div class="card-text" id="italian" contenteditable="true" spellcheck="false" data-placeholder="Tap the mic, or type here…"></div>
+        <div class="card-label" id="src-label">ITALIAN</div>
+        <div class="card-text" id="src-text" contenteditable="true" spellcheck="false" data-placeholder="Tap the mic, or type here…"></div>
         <button class="icon-btn mic-mini" id="mic-mini" type="button" title="Record" aria-label="Record">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
         </button>
@@ -38,8 +59,8 @@
       </div>
 
       <section class="card card-out">
-        <div class="card-label">FRENCH</div>
-        <div class="card-text" id="french" data-placeholder="Translation appears here…"></div>
+        <div class="card-label" id="tgt-label">FRENCH</div>
+        <div class="card-text" id="tgt-text" data-placeholder="Translation appears here…"></div>
         <button class="icon-btn speaker" id="replay-btn" type="button" title="Play" aria-label="Play">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9a4 4 0 0 1 0 6"/><path d="M19 7a8 8 0 0 1 0 10"/></svg>
         </button>

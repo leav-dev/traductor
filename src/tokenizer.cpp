@@ -41,11 +41,15 @@ void sussurro_tokenizer_free(sussurro_tokenizer * tok) {
     delete tok;
 }
 
-std::vector<int32_t> sussurro_encode(sussurro_tokenizer * tok, const std::string & text) {
+std::vector<int32_t> sussurro_encode(sussurro_tokenizer * tok, const std::string & text, const std::string & lang_token) {
     const std::vector<std::string> pieces = tok->source.EncodeAsPieces(text);
 
     std::vector<int32_t> ids;
-    ids.reserve(pieces.size() + 1);
+    ids.reserve(pieces.size() + 2);
+    if (!lang_token.empty()) {
+        auto lt = tok->token_to_id.find(lang_token);
+        if (lt != tok->token_to_id.end()) ids.push_back(lt->second);
+    }
     for (const std::string & piece : pieces) {
         auto it = tok->token_to_id.find(piece);
         ids.push_back(it != tok->token_to_id.end() ? it->second : tok->unk_id);

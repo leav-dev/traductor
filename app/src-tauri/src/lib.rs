@@ -7,11 +7,22 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 // EDIT this to your repo's absolute path (run `pwd` at the repo root):
 const REPO: &str = "/Users/emilie/Desktop/sussurro project/sussurro";
 
+// target language -> Piper voice directory under models/
+fn voice_dir(lang: &str) -> &'static str {
+    match lang {
+        "en" => "models/vits-piper-en_US-ryan-medium",
+        "es" => "models/vits-piper-es_ES-davefx-medium",
+        "it" => "models/vits-piper-it_IT-paola-medium",
+        _ => "models/vits-piper-fr_FR-tom-medium", // fr and fallback
+    }
+}
+
 #[tauri::command(async)]
-fn speak(text: String) -> Result<String, String> {
+fn speak(text: String, lang: String) -> Result<String, String> {
+    let voice = voice_dir(&lang);
     let output = Command::new(format!("{REPO}/build/sussurro-speak"))
         .current_dir(REPO)
-        .args(["-k", "models/vits-piper-fr_FR-tom-medium", "-t", &text, "--play"])
+        .arg("-k").arg(voice).arg("-t").arg(&text).arg("--play")
         .output()
         .map_err(|e| e.to_string())?;
     if output.status.success() {
@@ -22,13 +33,34 @@ fn speak(text: String) -> Result<String, String> {
 }
 
 // Italian text -> French text (via the `sussurro` CLI)
+// (source, target) -> (model file under models/, optional >>lang<< code for -l)
+fn route(source: &str, target: &str) -> Option<(&'static str, &'static str)> {
+    let pair = match (source, target) {
+        ("en", "fr") => ("tc-en-fr.gguf", ""),
+        ("en", "es") => ("tc-en-es.gguf", ""),
+        ("en", "it") => ("tc-en-it.gguf", ""),
+        ("fr", "en") => ("tc-fr-en.gguf", ""),
+        ("it", "en") => ("tc-it-en.gguf", ""),
+        ("es", "en") => ("es-en.gguf", ""),
+        ("it", "fr") | ("es", "fr") => ("tc-itc-itc.gguf", "fra"),
+        ("fr", "it") | ("es", "it") => ("tc-itc-itc.gguf", "ita"),
+        ("fr", "es") | ("it", "es") => ("tc-itc-itc.gguf", "spa"),
+        _ => return None,
+    };
+    Some(pair)
+}
+
 #[tauri::command(async)]
-fn translate(text: String) -> Result<String, String> {
-    let output = Command::new(format!("{REPO}/build/sussurro"))
-        .current_dir(REPO)
-        .args(["-m", "models/opus-mt-it-fr.q8_0.gguf", "-p", &text])
-        .output()
-        .map_err(|e| e.to_string())?;
+fn translate(text: String, source: String, target: String) -> Result<String, String> {
+    let (model, lang) = route(&source, &target)
+        .ok_or_else(|| format!("unsupported language pair: {source} -> {target}"))?;
+    let model_path = format!("models/{model}");
+    let mut cmd = Command::new(format!("{REPO}/build/sussurro"));
+    cmd.current_dir(REPO).arg("-m").arg(&model_path).arg("-p").arg(&text);
+    if !lang.is_empty() {
+        cmd.arg("-l").arg(lang);
+    }
+    let output = cmd.output().map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
@@ -73,6 +105,27 @@ fn interpret(path: String) -> Result<Transcript, String> {
         }
     }
     Ok(Transcript { italian, french })
+}
+
+#[tauri::command(async)]
+fn transcribe(path: String, lang: String) -> Result<String, String> {
+    let output = Command::new(format!("{REPO}/build/sussurro-interpret"))
+        .current_dir(REPO)
+        .arg("-w").arg("third_party/whisper.cpp/models/ggml-small.bin")
+        .arg("-a").arg(&path)
+        .arg("-l").arg(&lang)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("heard:") {
+            return Ok(rest.trim().to_string());
+        }
+    }
+    Err("no transcription found in output".into())
 }
 
 // ---- microphone capture (native, via cpal) ----
@@ -259,6 +312,7 @@ pub fn run() {
             speak,
             translate,
             interpret,
+            transcribe,
             start_recording,
             stop_recording
         ])

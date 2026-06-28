@@ -99,8 +99,8 @@ int main(int argc, char ** argv) {
         else if (a == "-l" && i + 1 < argc) lang = argv[++i];
         else if (a == "-b" && i + 1 < argc) beam = std::stoi(argv[++i]);
     }
-    if (whisper_model.empty() || translate_model.empty() || audio.empty()) {
-        printf("usage: sussurro-interpret -w <whisper.bin> -m <translate.gguf> -a <audio.wav> [-l it] [-b beam]\n");
+    if (whisper_model.empty() || audio.empty()) {
+        printf("usage: sussurro-interpret -w <whisper.bin> -a <audio.wav> [-m <translate.gguf>] [-l it] [-b beam]\n");
         return 1;
     }
 
@@ -112,12 +112,14 @@ int main(int argc, char ** argv) {
     printf("heard:       %s\n", source.c_str());
     if (source.empty()) return 1;
 
-    sussurro_model model;
-    if (!sussurro_model_load(translate_model, model)) return 1;
-    sussurro_tokenizer * tok = sussurro_tokenizer_create(model);
-    const std::string out = sussurro_translate(model, tok, source, max_new, beam);
-    printf("translation: %s\n", out.c_str());
-    sussurro_tokenizer_free(tok);
-    sussurro_model_free(model);
+    if (!translate_model.empty()) {
+        sussurro_model model;
+        if (!sussurro_model_load(translate_model, model)) return 1;
+        sussurro_tokenizer * tok = sussurro_tokenizer_create(model);
+        const std::string out = sussurro_translate(model, tok, source, max_new, beam);
+        printf("translation: %s\n", out.c_str());
+        sussurro_tokenizer_free(tok);
+        sussurro_model_free(model);
+    }
     return 0;
 }

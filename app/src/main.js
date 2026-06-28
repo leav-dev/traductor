@@ -1,36 +1,176 @@
 const { invoke } = window.__TAURI__.core;
 
 const statusEl = document.querySelector("#status");
-const italianEl = document.querySelector("#italian");
-const frenchEl = document.querySelector("#french");
+const srcTextEl = document.querySelector("#src-text");
+const tgtTextEl = document.querySelector("#tgt-text");
+const srcLabelEl = document.querySelector("#src-label");
+const tgtLabelEl = document.querySelector("#tgt-label");
+const srcDD = document.querySelector("#src-dd");
+const tgtDD = document.querySelector("#tgt-dd");
 const recordBig = document.querySelector("#record-btn");
 const micMini = document.querySelector("#mic-mini");
 const replayBtn = document.querySelector("#replay-btn");
 const swapBtn = document.querySelector("#swap-btn");
 
+const NAMES = { en: "English", fr: "Français", es: "Español", it: "Italiano" };
 const HINT = "Tap to speak · or type above";
+
+let srcLang = "it";
+let tgtLang = "fr";
+let outputMode = "text";   // "text" (show) or "voice" (speak, hide text)
+let lastOut = "";
 let recording = false;
 let busy = false;
-let outputMode = "text"; // "text" (show) or "voice" (speak, hide text)
-let lastFrench = "";
 
-// deliver the French result according to the chosen OUTPUT mode
-async function deliverFrench(fr) {
-  lastFrench = fr || "";
+// ---- custom language dropdowns (fully styled, keyboard-navigable) ----
+function renderDD(dd, lang) {
+  dd.querySelector(".lang-current").textContent = NAMES[lang];
+  dd.querySelectorAll("[role=option]").forEach((li) => {
+    li.classList.toggle("selected", li.dataset.lang === lang);
+  });
+}
+function syncLangUI() {
+  renderDD(srcDD, srcLang);
+  renderDD(tgtDD, tgtLang);
+  srcLabelEl.textContent = NAMES[srcLang].toUpperCase();
+  tgtLabelEl.textContent = NAMES[tgtLang].toUpperCase();
+}
+function closeDropdowns() {
+  for (const dd of [srcDD, tgtDD]) {
+    if (!dd.classList.contains("open")) continue;
+    dd.classList.remove("open");
+    const trigger = dd.querySelector(".lang-trigger");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.removeAttribute("aria-activedescendant");
+    dd.querySelectorAll("[role=option]").forEach((o) => o.classList.remove("active"));
+  }
+}
+// keep source and target different
+function setSource(lang) {
+  if (lang === tgtLang) tgtLang = srcLang;
+  srcLang = lang;
+  syncLangUI();
+}
+function setTarget(lang) {
+  if (lang === srcLang) srcLang = tgtLang;
+  tgtLang = lang;
+  syncLangUI();
+}
+function wireDropdown(dd, isSource) {
+  const trigger = dd.querySelector(".lang-trigger");
+  const options = [...dd.querySelectorAll("[role=option]")];
+  options.forEach((o, i) => { o.id = dd.id + "-opt-" + i; });
+
+  const activeIndex = () => (typeof dd._active === "number" ? dd._active : -1);
+  const highlight = (i) => {
+    options.forEach((o, k) => o.classList.toggle("active", k === i));
+    if (i >= 0) trigger.setAttribute("aria-activedescendant", options[i].id);
+    else trigger.removeAttribute("aria-activedescendant");
+    dd._active = i;
+  };
+  const open = () => {
+    closeDropdowns();
+    dd.classList.add("open");
+    trigger.setAttribute("aria-expanded", "true");
+    highlight(options.findIndex((o) => o.classList.contains("selected")));
+  };
+  const choose = (i) => {
+    if (i < 0 || i >= options.length) return;
+    if (isSource) setSource(options[i].dataset.lang);
+    else setTarget(options[i].dataset.lang);
+    closeDropdowns();
+  };
+
+  trigger.addEventListener("click", (e) => {
+    e.stopPropagation();          // keep the document handler from seeing trigger clicks
+    if (e.detail === 0) return;   // keyboard-synthesized click: handled in keydown
+    dd.classList.contains("open") ? closeDropdowns() : open();
+  });
+  options.forEach((li, i) => {
+    li.addEventListener("click", (e) => { e.stopPropagation(); choose(i); });
+    li.addEventListener("mousemove", () => highlight(i));
+  });
+  trigger.addEventListener("keydown", (e) => {
+    const isOpen = dd.classList.contains("open");
+    switch (e.key) {
+      case "ArrowDown":
+        e.preventDefault();
+        isOpen ? highlight(Math.min(activeIndex() + 1, options.length - 1)) : open();
+        break;
+      case "ArrowUp":
+        e.preventDefault();
+        isOpen ? highlight(Math.max(activeIndex() - 1, 0)) : open();
+        break;
+      case "Home":
+        if (isOpen) { e.preventDefault(); highlight(0); }
+        break;
+      case "End":
+        if (isOpen) { e.preventDefault(); highlight(options.length - 1); }
+        break;
+      case "Enter":
+      case " ":
+        e.preventDefault();
+        isOpen ? choose(activeIndex()) : open();
+        break;
+      case "Escape":
+        if (isOpen) { e.preventDefault(); closeDropdowns(); }
+        break;
+      case "Tab":
+        if (isOpen) closeDropdowns();
+        break;
+    }
+  });
+}
+wireDropdown(srcDD, true);
+wireDropdown(tgtDD, false);
+document.addEventListener("click", closeDropdowns);
+
+swapBtn.addEventListener("click", () => {
+  [srcLang, tgtLang] = [tgtLang, srcLang];
+  syncLangUI();
+  srcTextEl.textContent = "";
+  tgtTextEl.textContent = "";
+  lastOut = "";
+  statusEl.textContent = HINT;
+});
+
+// ---- deliver the target text according to the OUTPUT mode ----
+async function deliverTarget(out) {
+  lastOut = out || "";
   if (outputMode === "voice") {
-    frenchEl.textContent = "";
-    if (fr) {
+    tgtTextEl.textContent = "";
+    if (out) {
       statusEl.textContent = "Speaking…";
-      await invoke("speak", { text: fr });
+      await invoke("speak", { text: out, lang: tgtLang });
     }
     statusEl.textContent = HINT;
   } else {
-    frenchEl.textContent = fr || "—";
-    statusEl.textContent = fr ? "Done · tap the speaker to hear it" : HINT;
+    tgtTextEl.textContent = out || "—";
+    statusEl.textContent = out ? "Done · tap the speaker to hear it" : HINT;
   }
 }
 
-// ---- voice input: record -> interpret -> deliver ----
+// ---- text input: type source + Enter -> translate (routed) -> deliver ----
+srcTextEl.addEventListener("keydown", async (e) => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  e.preventDefault();
+  const txt = srcTextEl.textContent.trim();
+  if (!txt || busy) return;
+  busy = true;
+  srcTextEl.blur();
+  statusEl.textContent = "Translating…";
+  tgtTextEl.textContent = "";
+  try {
+    const out = await invoke("translate", { text: txt, source: srcLang, target: tgtLang });
+    await deliverTarget(out);
+  } catch (err) {
+    statusEl.textContent = "Error: " + err;
+  } finally {
+    busy = false;
+  }
+});
+
+// ---- voice input: transcribe (source lang) then translate (routed) ----
 async function toggleRecord() {
   if (busy) return;
   if (!recording) {
@@ -39,8 +179,8 @@ async function toggleRecord() {
       recording = true;
       recordBig.classList.add("recording");
       statusEl.textContent = "Listening… tap again to stop";
-      italianEl.textContent = "";
-      frenchEl.textContent = "";
+      srcTextEl.textContent = "";
+      tgtTextEl.textContent = "";
     } catch (e) {
       statusEl.textContent = "Error: " + e;
     }
@@ -51,9 +191,15 @@ async function toggleRecord() {
     statusEl.textContent = "Transcribing…";
     try {
       const path = await invoke("stop_recording");
-      const t = await invoke("interpret", { path });
-      italianEl.textContent = t.italian || "—";
-      await deliverFrench(t.french);
+      const heard = await invoke("transcribe", { path, lang: srcLang });
+      srcTextEl.textContent = heard || "—";
+      if (heard) {
+        statusEl.textContent = "Translating…";
+        const out = await invoke("translate", { text: heard, source: srcLang, target: tgtLang });
+        await deliverTarget(out);
+      } else {
+        statusEl.textContent = HINT;
+      }
     } catch (e) {
       statusEl.textContent = "Error: " + e;
     } finally {
@@ -61,49 +207,24 @@ async function toggleRecord() {
     }
   }
 }
-
 recordBig.addEventListener("click", toggleRecord);
 micMini.addEventListener("click", toggleRecord);
 
-// ---- text input: type Italian + Enter -> translate -> deliver ----
-italianEl.addEventListener("keydown", async (e) => {
-  if (e.key !== "Enter" || e.shiftKey) return;
-  e.preventDefault();
-  const txt = italianEl.textContent.trim();
-  if (!txt || busy) return;
-  busy = true;
-  italianEl.blur();
-  statusEl.textContent = "Translating…";
-  frenchEl.textContent = "";
-  try {
-    const fr = await invoke("translate", { text: txt });
-    await deliverFrench(fr);
-  } catch (err) {
-    statusEl.textContent = "Error: " + err;
-  } finally {
-    busy = false;
-  }
-});
-
-// ---- replay the French out loud (works in either mode) ----
+// ---- replay the target out loud (works in either mode) ----
 replayBtn.addEventListener("click", async () => {
-  const fr = (lastFrench || frenchEl.textContent).trim();
-  if (!fr || busy) return;
+  const out = (lastOut || tgtTextEl.textContent).trim();
+  if (!out || busy) return;
   statusEl.textContent = "Speaking…";
   try {
-    await invoke("speak", { text: fr });
+    await invoke("speak", { text: out, lang: tgtLang });
     statusEl.textContent = HINT;
   } catch (e) {
     statusEl.textContent = "Error: " + e;
   }
 });
 
-swapBtn.addEventListener("click", () => {
-  statusEl.textContent = "Italian → French only, for now.";
-});
-
 // ---- INPUT toggle: keyboard focuses the field, mic records ----
-document.querySelector("#in-keyboard").addEventListener("click", () => italianEl.focus());
+document.querySelector("#in-keyboard").addEventListener("click", () => srcTextEl.focus());
 document.querySelector("#in-mic").addEventListener("click", () => toggleRecord());
 
 // ---- OUTPUT toggle: text (show) vs voice (speak, hide) ----
@@ -119,3 +240,5 @@ document.querySelectorAll(".toggle").forEach((group) => {
     });
   });
 });
+
+syncLangUI();

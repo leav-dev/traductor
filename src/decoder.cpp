@@ -247,8 +247,8 @@ static std::vector<int32_t> beam_search(const sussurro_model & model,
 
 static std::string translate_sentence(const sussurro_model & model, sussurro_tokenizer * tok,
                                       const std::string & source, int max_new_tokens, int beam_size,
-                                      int & n_decoded) {
-    const std::vector<int32_t> src_ids = sussurro_encode(tok, source);
+                                      int & n_decoded, const std::string & lang_token) {
+    const std::vector<int32_t> src_ids = sussurro_encode(tok, source, lang_token);
     const int n_src = (int) src_ids.size();
     const std::vector<float> memory = sussurro_run_encoder(model, src_ids);
 
@@ -326,7 +326,8 @@ static std::vector<std::string> split_sentences(const std::string & text) {
 }
 
 std::string sussurro_translate(const sussurro_model & model, sussurro_tokenizer * tok,
-                               const std::string & source, int max_new_tokens, int beam_size) {
+                               const std::string & source, int max_new_tokens, int beam_size,
+                               const std::string & lang_token) {
     const std::vector<std::string> sentences = split_sentences(source);
 
     const auto t_start = std::chrono::steady_clock::now();
@@ -334,7 +335,7 @@ std::string sussurro_translate(const sussurro_model & model, sussurro_tokenizer 
     int total = 0;
     for (const std::string & s : sentences) {
         int n = 0;
-        const std::string piece = translate_sentence(model, tok, s, max_new_tokens, beam_size, n);
+        const std::string piece = translate_sentence(model, tok, s, max_new_tokens, beam_size, n, lang_token);
         total += n;
         if (!piece.empty()) {
             if (!result.empty()) result += ' ';

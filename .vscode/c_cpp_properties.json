@@ -4,10 +4,12 @@
     {
       "name": "Mac",
       "configurationProvider": "ms-vscode.cmake-tools",
+      "compileCommands": "${workspaceFolder}/build/compile_commands.json",
       "cStandard": "c11",
       "cppStandard": "c++17",
       "includePath": [
         "${workspaceFolder}/src",
+        "${workspaceFolder}/build/_deps/sentencepiece-src/src",
         "${workspaceFolder}/third_party/sherpa-onnx/include",
         "${workspaceFolder}/third_party/whisper.cpp/include",
         "${workspaceFolder}/third_party/ggml/include"

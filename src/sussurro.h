@@ -47,10 +47,11 @@ struct sussurro_tokenizer;
 
 sussurro_tokenizer * sussurro_tokenizer_create(const sussurro_model & model);
 void sussurro_tokenizer_free(sussurro_tokenizer * tokenizer);
-std::vector<int32_t> sussurro_encode(sussurro_tokenizer * tokenizer, const std::string & text);
+std::vector<int32_t> sussurro_encode(sussurro_tokenizer * tokenizer, const std::string & text, const std::string & lang_token = "");
 std::string sussurro_decode(sussurro_tokenizer * tokenizer, const std::vector<int32_t> & ids);
 
 std::vector<float> sussurro_run_encoder(const sussurro_model & model, const std::vector<int32_t> & ids);
 
 std::string sussurro_translate(const sussurro_model & model, sussurro_tokenizer * tokenizer,
-                               const std::string & source, int max_new_tokens, int beam_size = 1);
+                               const std::string & source, int max_new_tokens, int beam_size = 1,
+                               const std::string & lang_token = "");
