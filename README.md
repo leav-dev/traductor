@@ -1,13 +1,14 @@
 # sussurro
 
-Offline neural machine translation **and voice** for English and the Romance languages, built from scratch on [ggml](https://github.com/ggml-org/ggml). 
-Speak or type in one language, read or hear it in another — across **English, Spanish, French and Italian**, fully on-device: no server, no network at runtime. 
+Offline neural machine translation **and voice** for English and the Romance languages. Speak or type in one language, read or hear it in another — across **English, Spanish, French and Italian**, fully on-device: no server, no network at runtime.
+
+The translation engine is built from scratch on [ggml](https://github.com/ggml-org/ggml); speech recognition uses [whisper.cpp](https://github.com/ggml-org/whisper.cpp), and speech synthesis uses Piper voices via [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) (ONNX Runtime).
 
 The name is Italian for *whisper*.
 
 ## Status — v0.7
 
-A multilingual, offline **voice-to-voice interpreter** with a native **desktop app**: choose a source and a target language, speak (or type), read the result, hear it spoken — and every stage is also usable from the command line.
+A multilingual, offline **translator** with a native **desktop app**: choose a source and a target language, then type or speak, and read or hear the result — every stage is also usable from the command line.
 
 - **Translate** — English, Spanish, French, Italian, in every direction. Encoder–decoder Transformers (OPUS-MT / Marian) reimplemented on ggml, with greedy and beam-search decoding, an incremental KV cache, sentence splitting, and q8_0 / q4_0 / f16 weights.
 - **Listen** — multilingual speech-to-text via [whisper.cpp](https://github.com/ggml-org/whisper.cpp).
@@ -15,6 +16,8 @@ A multilingual, offline **voice-to-voice interpreter** with a native **desktop a
 - **Desktop app** — a [Tauri](https://v2.tauri.app) UI (Liquid Glass) wrapping all of the above.
 
 Everything runs locally (Metal + Accelerate on Apple Silicon).
+
+> **Tested on:** Apple Silicon (M5 Max), macOS Tahoe 26.4. Other Apple Silicon Macs and macOS versions should work but are untested. Intel Macs, Windows and Linux aren't verified yet — contributions welcome.
 
 ## Languages
 
@@ -32,6 +35,8 @@ Two kinds of model cover all twelve directions among **en / es / fr / it**, with
 | it/es → fr | `tc-itc-itc` | `fra` |
 | fr/es → it | `tc-itc-itc` | `ita` |
 | fr/it → es | `tc-itc-itc` | `spa` |
+
+`es → en` is the one pair with no `tc-big` model, so it uses the classic `opus-mt-es-en` instead — slightly older, but a high-resource pair, so quality holds.
 
 The desktop app picks the right model and token automatically from the chosen languages; from the CLI you select them yourself.
 
@@ -159,7 +164,7 @@ Voice-to-voice demo — Italian audio in, English spoken out:
 
 ## Desktop app (Tauri)
 
-`app/` is a desktop front-end built with [Tauri v2](https://v2.tauri.app) (Rust backend + a vanilla web UI) in the Liquid Glass interface: pick a source and target language, then speak or type, read the result, and hear it in that language's voice. 
+`app/` is a desktop front-end built with [Tauri v2](https://v2.tauri.app) (Rust backend + a vanilla web UI) in the Liquid Glass interface: pick a source and target language, then speak or type, read the result, and hear it in that language's voice.
 The swap button reverses the two languages.
 
 Prerequisites: Rust 1.77+ and Node.js 20+ (plus Xcode Command Line Tools on macOS).
@@ -170,7 +175,7 @@ npm install
 npm run tauri dev
 ```
 
-The app calls the compiled engine binaries directly, so before running you need: the binaries built (`cmake --build build -j` at the repo root), the models and voices in place (above), and the `REPO` constant in `app/src-tauri/src/lib.rs` set to this repo's absolute path. 
+The app calls the compiled engine binaries directly, so before running you need: the binaries built (`cmake --build build -j` at the repo root), the models and voices in place (above), and the `REPO` constant in `app/src-tauri/src/lib.rs` set to this repo's absolute path.
 Microphone capture is native (via cpal); macOS asks for permission on first use (declared in `app/src-tauri/Info.plist`).
 
 > **Note — early build.** The app shells out to the local engine binaries using an absolute path, so it
@@ -179,6 +184,7 @@ Microphone capture is native (via cpal); macOS asks for permission on first use 
 
 ## Roadmap
 
+- Windows and Linux support (developed on Apple Silicon; PRs very welcome).
 - A self-contained, code-signed desktop bundle.
 - More languages and pairs (Portuguese is one token away on the Romance model).
 - A more expressive voice (e.g. Qwen3-TTS).

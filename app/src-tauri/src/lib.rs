@@ -1,13 +1,27 @@
-use std::process::Command;
+use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use tauri::Manager;
 
 // EDIT this to your repo's absolute path (run `pwd` at the repo root):
 const REPO: &str = "/Users/emilie/Desktop/sussurro project/sussurro";
 
-// target language -> Piper voice directory under models/
+// Playback processes we spawn, so they can be killed when the window closes
+// (Windows doesn't auto-kill children, so audio would otherwise keep playing).
+#[derive(Default)]
+struct Children(Arc<Mutex<Vec<Child>>>);
+
+impl Children {
+    fn kill_all(&self) {
+        for mut child in self.0.lock().unwrap().drain(..) {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+}
+
 fn voice_dir(lang: &str) -> &'static str {
     match lang {
         "en" => "models/vits-piper-en_US-ryan-medium",
@@ -18,21 +32,45 @@ fn voice_dir(lang: &str) -> &'static str {
 }
 
 #[tauri::command(async)]
-fn speak(text: String, lang: String) -> Result<String, String> {
+fn speak(
+    text: String,
+    lang: String,
+    children: tauri::State<Children>,
+) -> Result<String, String> {
     let voice = voice_dir(&lang);
-    let output = Command::new(format!("{REPO}/build/sussurro-speak"))
+    let child = Command::new(format!("{REPO}/build/sussurro-speak"))
         .current_dir(REPO)
         .arg("-k").arg(voice).arg("-t").arg(&text).arg("--play")
-        .output()
+        .spawn()
         .map_err(|e| e.to_string())?;
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
+
+    let pid = child.id();
+    children.0.lock().unwrap().push(child);
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let mut guard = children.0.lock().unwrap();
+        let Some(pos) = guard.iter().position(|c| c.id() == pid) else {
+            return Ok(String::new()); // killed on window close
+        };
+        match guard[pos].try_wait() {
+            Ok(Some(status)) => {
+                guard.remove(pos);
+                return if status.success() {
+                    Ok(String::new())
+                } else {
+                    Err(format!("sussurro-speak exited with status {status}"))
+                };
+            }
+            Ok(None) => {}
+            Err(e) => {
+                guard.remove(pos);
+                return Err(e.to_string());
+            }
+        }
     }
 }
 
-// Italian text -> French text (via the `sussurro` CLI)
 // (source, target) -> (model file under models/, optional >>lang<< code for -l)
 fn route(source: &str, target: &str) -> Option<(&'static str, &'static str)> {
     let pair = match (source, target) {
@@ -71,40 +109,6 @@ fn translate(text: String, source: String, target: String) -> Result<String, Str
         }
     }
     Err("no translation found in output".into())
-}
-
-#[derive(serde::Serialize)]
-struct Transcript {
-    italian: String,
-    french: String,
-}
-
-// Italian audio file -> { italian transcription, french translation } (via `sussurro-interpret`)
-#[tauri::command(async)]
-fn interpret(path: String) -> Result<Transcript, String> {
-    let output = Command::new(format!("{REPO}/build/sussurro-interpret"))
-        .current_dir(REPO)
-        .args([
-            "-w", "third_party/whisper.cpp/models/ggml-small.bin",
-            "-m", "models/opus-mt-it-fr.q8_0.gguf",
-            "-a", &path,
-        ])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if !output.status.success() {
-        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut italian = String::new();
-    let mut french = String::new();
-    for line in stdout.lines() {
-        if let Some(rest) = line.strip_prefix("heard:") {
-            italian = rest.trim().to_string();
-        } else if let Some(rest) = line.strip_prefix("translation:") {
-            french = rest.trim().to_string();
-        }
-    }
-    Ok(Transcript { italian, french })
 }
 
 #[tauri::command(async)]
@@ -308,10 +312,15 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(Recorder::default())
+        .manage(Children::default())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                window.state::<Children>().kill_all();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             speak,
             translate,
-            interpret,
             transcribe,
             start_recording,
             stop_recording

@@ -25,10 +25,12 @@ body {
   color: var(--text);
   font-family: var(--font-sans);
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
   padding: 28px;
   -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow: auto;
 }
 
 .app {
