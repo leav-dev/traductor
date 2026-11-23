@@ -243,7 +243,6 @@ document.querySelectorAll(".toggle").forEach((group) => {
 
 syncLangUI();
 // ---- Audio device management ----
-const { invoke } = window.__TAURI__.core;
 
 async function loadDevices() {
   try {
