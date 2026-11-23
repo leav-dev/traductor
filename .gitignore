@@ -1,31 +1,30 @@
-# build output (C++ engine)
-/build/
-
-# models & voices (downloaded or generated — large, reproducible via the README)
-/models/
+# Models (AI models — do not commit)
+models/*.gguf
+models/*.bin
+models/*.onnx
 *.gguf
 *.bin
 *.onnx
 
-# audio scratch
-*.wav
-
-# compiled objects
+# Build artifacts
+build/
+target/
 *.o
 *.a
 
-# python
-__pycache__/
-*.pyc
+# Tauri
+app/src-tauri/target/
+app/node_modules/
 
-# macOS
+# Submodules (code, not models)
+# third_party/ggml/
+# third_party/whisper.cpp/
+# third_party/miniaudio/
+
+# OS
 .DS_Store
+Thumbs.db
 
-# prebuilt sherpa-onnx (downloaded — large)
-/third_party/sherpa-onnx/
-
-# Tauri desktop app artifacts
-/app/node_modules/
-/app/dist/
-/app/src-tauri/target/
-/app/src-tauri/gen/
+# IDE
+.vscode/
+.idea/

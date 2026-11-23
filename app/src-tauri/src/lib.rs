@@ -6,7 +6,14 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tauri::Manager;
 
 // EDIT this to your repo's absolute path (run `pwd` at the repo root):
-const REPO: &str = "/Users/emilie/Desktop/sussurro project/sussurro";
+// Resolve repo path: env var SUSSURRO_REPO, or current working directory
+fn repo_path() -> String {
+    std::env::var("SUSSURRO_REPO").unwrap_or_else(|_| {
+        std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| ".".to_string())
+    })
+}
 
 // Playback processes we spawn, so they can be killed when the window closes
 // (Windows doesn't auto-kill children, so audio would otherwise keep playing).
@@ -38,8 +45,8 @@ fn speak(
     children: tauri::State<Children>,
 ) -> Result<String, String> {
     let voice = voice_dir(&lang);
-    let child = Command::new(format!("{REPO}/build/sussurro-speak"))
-        .current_dir(REPO)
+    let child = Command::new(format!("{}/build/sussurro-speak", repo_path()))
+        .current_dir(repo_path())
         .arg("-k").arg(voice).arg("-t").arg(&text).arg("--play")
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -93,8 +100,8 @@ fn translate(text: String, source: String, target: String) -> Result<String, Str
     let (model, lang) = route(&source, &target)
         .ok_or_else(|| format!("unsupported language pair: {source} -> {target}"))?;
     let model_path = format!("models/{model}");
-    let mut cmd = Command::new(format!("{REPO}/build/sussurro"));
-    cmd.current_dir(REPO).arg("-m").arg(&model_path).arg("-p").arg(&text);
+    let mut cmd = Command::new(format!("{}/build/sussurro", repo_path()));
+    cmd.current_dir(repo_path()).arg("-m").arg(&model_path).arg("-p").arg(&text);
     if !lang.is_empty() {
         cmd.arg("-l").arg(lang);
     }
@@ -113,8 +120,8 @@ fn translate(text: String, source: String, target: String) -> Result<String, Str
 
 #[tauri::command(async)]
 fn transcribe(path: String, lang: String) -> Result<String, String> {
-    let output = Command::new(format!("{REPO}/build/sussurro-interpret"))
-        .current_dir(REPO)
+    let output = Command::new(format!("{}/build/sussurro-interpret", repo_path()))
+        .current_dir(repo_path())
         .arg("-w").arg("third_party/whisper.cpp/models/ggml-small.bin")
         .arg("-a").arg(&path)
         .arg("-l").arg(&lang)
