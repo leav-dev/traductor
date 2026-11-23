@@ -164,6 +164,32 @@ struct VoiceProfiles {
     selected: Arc<Mutex<Option<String>>>,
 }
 
+#[tauri::command]
+fn get_config() -> Result<String, String> {
+    let base = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let path = base.join(".traductor").join("config.json");
+    if path.exists() {
+        std::fs::read_to_string(&path).map_err(|e| e.to_string())
+    } else {
+        Ok(r#"{"ask_voice_on_startup": true}"#.to_string())
+    }
+}
+
+#[tauri::command]
+fn set_config(config: String) -> Result<(), String> {
+    let base = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| std::path::PathBuf::from("."));
+    let dir = base.join(".traductor");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("config.json");
+    std::fs::write(&path, config).map_err(|e| e.to_string())
+}
+
 impl VoiceProfiles {
     fn voices_dir() -> std::path::PathBuf {
         let base = std::env::var("HOME")
@@ -552,7 +578,9 @@ pub fn run() {
             select_voice_sample,
             delete_voice_sample,
             get_selected_voice,
-            get_voice_sample_path
+            get_voice_sample_path,
+            get_config,
+            set_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

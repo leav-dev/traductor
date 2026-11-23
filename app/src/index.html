@@ -123,7 +123,24 @@
         <button id="delete-voice-btn" type="button">Delete</button>
       </div>
       <p class="hint">Each person using this PC can record their own voice sample. Select the active voice for TTS output.</p>
+      <div class="device-row">
+        <label>
+          <input type="checkbox" id="ask-voice-startup" />
+          Ask which voice to use on startup
+        </label>
+      </div>
     </details>
+
+    <div id="startup-voice-dialog" class="startup-dialog" style="display:none;">
+      <div class="startup-dialog-content">
+        <h3>Select voice for this session</h3>
+        <select id="startup-voice-select"></select>
+        <div class="startup-dialog-buttons">
+          <button id="startup-voice-confirm" type="button">Use this voice</button>
+          <button id="startup-voice-skip" type="button">Use last selected</button>
+        </div>
+      </div>
+    </div>
 
     </main>
   </body>

@@ -311,6 +311,16 @@ let isCalibrating = false;
 
 async function loadVoiceProfiles() {
   try {
+    // Load config checkbox state
+    const config = JSON.parse(await invoke("get_config"));
+    const checkbox = document.getElementById("ask-voice-startup");
+    if (checkbox) {
+      checkbox.checked = config.ask_voice_on_startup !== false;
+      checkbox.onchange = async () => {
+        const newConfig = JSON.stringify({ ask_voice_on_startup: checkbox.checked });
+        await invoke("set_config", { config: newConfig });
+      };
+    }
     const samples = await invoke("list_voice_samples");
     const select = document.getElementById("voice-select");
     if (!select) return;
@@ -333,6 +343,52 @@ async function loadVoiceProfiles() {
     }
   } catch (e) {
     console.error("Failed to load voice profiles:", e);
+  }
+}
+
+async function showStartupVoiceDialog() {
+  try {
+    const config = JSON.parse(await invoke("get_config"));
+    if (!config.ask_voice_on_startup) return;
+    const samples = await invoke("list_voice_samples");
+    if (samples.length <= 1) return; // Only ask if multiple profiles
+
+    const dialog = document.getElementById("startup-voice-dialog");
+    const select = document.getElementById("startup-voice-select");
+    if (!dialog || !select) return;
+
+    select.innerHTML = "";
+    samples.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+    // Pre-select current active
+    const active = await invoke("get_selected_voice");
+    if (active) {
+      for (const opt of select.options) {
+        if (opt.value === active) { opt.selected = true; break; }
+      }
+    }
+
+    dialog.style.display = "flex";
+
+    return new Promise((resolve) => {
+      document.getElementById("startup-voice-confirm").onclick = async () => {
+        const chosen = select.value;
+        await invoke("select_voice_sample", { name: chosen });
+        dialog.style.display = "none";
+        await loadVoiceProfiles();
+        resolve(chosen);
+      };
+      document.getElementById("startup-voice-skip").onclick = () => {
+        dialog.style.display = "none";
+        resolve(null);
+      };
+    });
+  } catch (e) {
+    console.error("Startup voice dialog error:", e);
   }
 }
 
@@ -395,6 +451,7 @@ async function onVoiceSelectChange() {
 
 document.addEventListener("DOMContentLoaded", () => {
   loadVoiceProfiles();
+  showStartupVoiceDialog();
   const calibrateBtn = document.getElementById("calibrate-btn");
   if (calibrateBtn) calibrateBtn.addEventListener("click", startCalibration);
   const deleteBtn = document.getElementById("delete-voice-btn");
