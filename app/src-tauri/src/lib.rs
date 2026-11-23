@@ -159,6 +159,22 @@ impl Default for Recorder {
     }
 }
 
+#[derive(Default)]
+struct VoiceReference {
+    path: Arc<Mutex<Option<String>>>,
+}
+
+impl VoiceReference {
+    fn voice_path() -> std::path::PathBuf {
+        let base = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        base.join(".traductor").join("user_voice.wav")
+    }
+}
+
+
 #[tauri::command]
 fn list_input_devices() -> Result<Vec<String>, String> {
     let host = cpal::default_host();
@@ -352,6 +368,50 @@ fn stop_recording(state: tauri::State<Recorder>) -> Result<String, String> {
     Ok(path.to_string_lossy().to_string())
 }
 
+#[tauri::command]
+fn calibrate_voice(state: tauri::State<Recorder>, voice_ref: tauri::State<VoiceReference>) -> Result<String, String> {
+    // Reuse the recorded audio from the last stop_recording
+    // The voice sample should already be captured; save it to the voice reference path
+    let voice_path = VoiceReference::voice_path();
+    if let Some(parent) = voice_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    // Check if there's a recent recording
+    let raw = state.samples.lock().unwrap().clone();
+    if raw.is_empty() {
+        return Err("No audio captured. Record a voice sample first (5-30 seconds).".into());
+    }
+
+    let in_rate = state.in_rate.load(Ordering::SeqCst);
+    let samples = if in_rate == 16_000 || raw.is_empty() {
+        raw
+    } else {
+        resample_to_16k(&raw, in_rate)
+    };
+
+    write_wav_16k(&voice_path, &samples)?;
+    let path_str = voice_path.to_string_lossy().to_string();
+    *voice_ref.path.lock().unwrap() = Some(path_str.clone());
+    Ok(path_str)
+}
+
+#[tauri::command]
+fn has_voice_reference() -> Result<bool, String> {
+    let voice_path = VoiceReference::voice_path();
+    Ok(voice_path.exists())
+}
+
+#[tauri::command]
+fn get_voice_reference() -> Result<Option<String>, String> {
+    let voice_path = VoiceReference::voice_path();
+    if voice_path.exists() {
+        Ok(Some(voice_path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
 fn resample_to_16k(input: &[f32], in_rate: u32) -> Vec<f32> {
     if in_rate == 16_000 || input.is_empty() {
         return input.to_vec();
@@ -390,6 +450,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(Recorder::default())
         .manage(Children::default())
+        .manage(VoiceReference::default())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 window.state::<Children>().kill_all();
@@ -403,7 +464,10 @@ pub fn run() {
             stop_recording,
             list_input_devices,
             list_output_devices,
-            detect_virtual_device
+            detect_virtual_device,
+            calibrate_voice,
+            has_voice_reference,
+            get_voice_reference
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

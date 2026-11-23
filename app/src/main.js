@@ -305,3 +305,60 @@ document.addEventListener("DOMContentLoaded", () => {
     detectBtn.addEventListener("click", detectVirtual);
   }
 });
+
+// ---- Voice calibration for TTS voice cloning ----
+let isCalibrating = false;
+
+async function startCalibration() {
+  const btn = document.getElementById("calibrate-btn");
+  const status = document.getElementById("calibrate-status");
+  if (isCalibrating) {
+    // Stop recording
+    isCalibrating = false;
+    btn.textContent = "Processing...";
+    btn.disabled = true;
+    try {
+      await invoke("stop_recording");
+      const path = await invoke("calibrate_voice");
+      status.textContent = "Voice sample saved: " + path;
+      btn.textContent = "Record voice sample (5-30s)";
+    } catch (e) {
+      status.textContent = "Error: " + e;
+      btn.textContent = "Record voice sample (5-30s)";
+    }
+    btn.disabled = false;
+  } else {
+    // Start recording
+    isCalibrating = true;
+    btn.textContent = "Stop recording";
+    status.textContent = "Recording... speak for 5-30 seconds";
+    try {
+      const device = document.getElementById("input-device")?.value;
+      await invoke("start_recording", { deviceName: device || null });
+    } catch (e) {
+      status.textContent = "Error: " + e;
+      isCalibrating = false;
+      btn.textContent = "Record voice sample (5-30s)";
+    }
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  const calibrateBtn = document.getElementById("calibrate-btn");
+  if (calibrateBtn) {
+    calibrateBtn.addEventListener("click", startCalibration);
+  }
+  // Check if voice reference exists
+  (async () => {
+    try {
+      const exists = await invoke("has_voice_reference");
+      const status = document.getElementById("calibrate-status");
+      if (exists && status) {
+        const path = await invoke("get_voice_reference");
+        status.textContent = "Voice sample exists: " + path;
+      }
+    } catch (e) {
+      // ignore
+    }
+  })();
+});
