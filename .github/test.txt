@@ -1,0 +1,31 @@
+# CodeRabbit Configuration
+# https://docs.coderabbit.ai/getting-started/configure-coderabbit
+
+language: "es-ES"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "app/src-tauri/src/**/*.rs"
+      instructions: "Revisar código Rust para Tauri. Verificar manejo de errores, thread safety, y uso correcto de cpal/tauri APIs."
+    - path: "src/**/*.cpp"
+      instructions: "Revisar código C++ para ggml/Marian. Verificar memory management y performance."
+    - path: "app/src/**/*.js"
+      instructions: "Revisar JavaScript del frontend. Verificar manejo de errores en invoke() calls."
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/target/**"
+    - "!**/build/**"
+    - "!third_party/**"
+
+chat:
+  auto_reply: true
