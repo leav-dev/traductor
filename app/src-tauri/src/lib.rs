@@ -62,6 +62,7 @@ fn speak(text: String, lang: String, children: tauri::State<Children>) -> Result
         };
         match guard[pos].try_wait() {
             Ok(Some(status)) => {
+                let _ = guard[pos].wait();
                 guard.remove(pos);
                 return if status.success() {
                     Ok(String::new())
@@ -372,7 +373,7 @@ fn start_recording(
         };
         in_rate.store(config.sample_rate(), Ordering::SeqCst);
         let channels = config.channels() as usize;
-        let stream_config: cpal::StreamConfig = config.clone().into();
+        let stream_config: cpal::StreamConfig = config.into();
         let err_fn = |e| eprintln!("audio stream error: {e}");
 
         let samples_cb = samples.clone();
