@@ -38,16 +38,17 @@ fn voice_dir(lang: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::zombie_processes)]
 #[tauri::command(async)]
-fn speak(
-    text: String,
-    lang: String,
-    children: tauri::State<Children>,
-) -> Result<String, String> {
+fn speak(text: String, lang: String, children: tauri::State<Children>) -> Result<String, String> {
     let voice = voice_dir(&lang);
     let child = Command::new(format!("{}/build/sussurro-speak", repo_path()))
         .current_dir(repo_path())
-        .arg("-k").arg(voice).arg("-t").arg(&text).arg("--play")
+        .arg("-k")
+        .arg(voice)
+        .arg("-t")
+        .arg(&text)
+        .arg("--play")
         .spawn()
         .map_err(|e| e.to_string())?;
 
@@ -62,6 +63,7 @@ fn speak(
         };
         match guard[pos].try_wait() {
             Ok(Some(status)) => {
+                let _ = guard[pos].wait();
                 guard.remove(pos);
                 return if status.success() {
                     Ok(String::new())
@@ -101,7 +103,11 @@ fn translate(text: String, source: String, target: String) -> Result<String, Str
         .ok_or_else(|| format!("unsupported language pair: {source} -> {target}"))?;
     let model_path = format!("models/{model}");
     let mut cmd = Command::new(format!("{}/build/sussurro", repo_path()));
-    cmd.current_dir(repo_path()).arg("-m").arg(&model_path).arg("-p").arg(&text);
+    cmd.current_dir(repo_path())
+        .arg("-m")
+        .arg(&model_path)
+        .arg("-p")
+        .arg(&text);
     if !lang.is_empty() {
         cmd.arg("-l").arg(lang);
     }
@@ -122,9 +128,12 @@ fn translate(text: String, source: String, target: String) -> Result<String, Str
 fn transcribe(path: String, lang: String) -> Result<String, String> {
     let output = Command::new(format!("{}/build/sussurro-interpret", repo_path()))
         .current_dir(repo_path())
-        .arg("-w").arg("third_party/whisper.cpp/models/ggml-small.bin")
-        .arg("-a").arg(&path)
-        .arg("-l").arg(&lang)
+        .arg("-w")
+        .arg("third_party/whisper.cpp/models/ggml-small.bin")
+        .arg("-a")
+        .arg(&path)
+        .arg("-l")
+        .arg(&lang)
         .output()
         .map_err(|e| e.to_string())?;
     if !output.status.success() {
@@ -229,7 +238,10 @@ impl VoiceProfiles {
     fn selected_name() -> Option<String> {
         let path = Self::config_path();
         if path.exists() {
-            std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+            std::fs::read_to_string(&path)
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
         } else {
             None
         }
@@ -244,23 +256,21 @@ impl VoiceProfiles {
     }
 }
 
-
-
 #[tauri::command]
 fn list_input_devices() -> Result<Vec<String>, String> {
     let host = cpal::default_host();
     let devices = host.input_devices().map_err(|e| e.to_string())?;
     let mut names = Vec::new();
     for device in devices {
-        if let Ok(name) = device.name() {
-            names.push(name);
+        if let Ok(desc) = device.description() {
+            names.push(desc.name().to_string());
         }
     }
     if names.is_empty() {
         // Fallback: try default device name
         if let Some(dev) = host.default_input_device() {
-            if let Ok(name) = dev.name() {
-                names.push(name);
+            if let Ok(desc) = dev.description() {
+                names.push(desc.name().to_string());
             }
         }
     }
@@ -273,14 +283,14 @@ fn list_output_devices() -> Result<Vec<String>, String> {
     let devices = host.output_devices().map_err(|e| e.to_string())?;
     let mut names = Vec::new();
     for device in devices {
-        if let Ok(name) = device.name() {
-            names.push(name);
+        if let Ok(desc) = device.description() {
+            names.push(desc.name().to_string());
         }
     }
     if names.is_empty() {
         if let Some(dev) = host.default_output_device() {
-            if let Ok(name) = dev.name() {
-                names.push(name);
+            if let Ok(desc) = dev.description() {
+                names.push(desc.name().to_string());
             }
         }
     }
@@ -291,9 +301,18 @@ fn list_output_devices() -> Result<Vec<String>, String> {
 fn detect_virtual_device() -> Result<Option<String>, String> {
     let host = cpal::default_host();
     let devices = host.output_devices().map_err(|e| e.to_string())?;
-    let virtual_keywords = ["virtual", "vb-cable", "vb cable", "blackhole", "null", "dummy", "loopback"];
+    let virtual_keywords = [
+        "virtual",
+        "vb-cable",
+        "vb cable",
+        "blackhole",
+        "null",
+        "dummy",
+        "loopback",
+    ];
     for device in devices {
-        if let Ok(name) = device.name() {
+        if let Ok(desc) = device.description() {
+            let name = desc.name().to_string();
             let lower = name.to_lowercase();
             for kw in &virtual_keywords {
                 if lower.contains(kw) {
@@ -306,7 +325,10 @@ fn detect_virtual_device() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
-fn start_recording(state: tauri::State<Recorder>, device_name: Option<String>) -> Result<(), String> {
+fn start_recording(
+    state: tauri::State<Recorder>,
+    device_name: Option<String>,
+) -> Result<(), String> {
     if state.recording.load(Ordering::SeqCst) {
         return Err("already recording".into());
     }
@@ -324,10 +346,13 @@ fn start_recording(state: tauri::State<Recorder>, device_name: Option<String>) -
         let host = cpal::default_host();
         let device = if let Some(ref name) = device_name {
             match host.input_devices() {
-                Ok(mut devs) => {
-                    devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false))
-                        .or_else(|| host.default_input_device())
-                }
+                Ok(mut devs) => devs
+                    .find(|d| {
+                        d.description()
+                            .map(|desc| desc.name() == *name)
+                            .unwrap_or(false)
+                    })
+                    .or_else(|| host.default_input_device()),
                 Err(_) => host.default_input_device(),
             }
         } else {
@@ -349,7 +374,7 @@ fn start_recording(state: tauri::State<Recorder>, device_name: Option<String>) -
         };
         in_rate.store(config.sample_rate(), Ordering::SeqCst);
         let channels = config.channels() as usize;
-        let stream_config: cpal::StreamConfig = config.clone().into();
+        let stream_config: cpal::StreamConfig = config.into();
         let err_fn = |e| eprintln!("audio stream error: {e}");
 
         let samples_cb = samples.clone();
@@ -378,8 +403,8 @@ fn start_recording(state: tauri::State<Recorder>, device_name: Option<String>) -
                     }
                     let mut buf = samples_cb.lock().unwrap();
                     for frame in data.chunks(channels) {
-                        let s: f32 =
-                            frame.iter().map(|&v| v as f32 / 32768.0).sum::<f32>() / channels as f32;
+                        let s: f32 = frame.iter().map(|&v| v as f32 / 32768.0).sum::<f32>()
+                            / channels as f32;
                         buf.push(s);
                     }
                 },
@@ -440,12 +465,19 @@ fn stop_recording(state: tauri::State<Recorder>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn calibrate_voice(state: tauri::State<Recorder>, profiles: tauri::State<VoiceProfiles>, name: String) -> Result<String, String> {
+fn calibrate_voice(
+    state: tauri::State<Recorder>,
+    profiles: tauri::State<VoiceProfiles>,
+    name: String,
+) -> Result<String, String> {
     let dir = VoiceProfiles::voices_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     // Sanitize name
-    let safe_name: String = name.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+    let safe_name: String = name
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
     if safe_name.is_empty() {
         return Err("Invalid name. Use alphanumeric characters.".into());
     }

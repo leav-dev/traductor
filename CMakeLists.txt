@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(sussurro LANGUAGES C CXX)
 
+# Fix for GCC 13+ where uint32_t is not defined in sentencepiece headers
+add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-include> $<$<COMPILE_LANGUAGE:CXX>:cstdint>)
+
 # SentencePiece (fetched below) ships an old cmake_minimum_required; allow it under CMake 4+
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
