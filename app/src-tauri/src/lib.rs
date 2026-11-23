@@ -260,15 +260,15 @@ fn list_input_devices() -> Result<Vec<String>, String> {
     let devices = host.input_devices().map_err(|e| e.to_string())?;
     let mut names = Vec::new();
     for device in devices {
-        if let Ok(name) = device.name() {
-            names.push(name);
+        if let Ok(desc) = device.description() {
+            names.push(desc.name().to_string());
         }
     }
     if names.is_empty() {
         // Fallback: try default device name
         if let Some(dev) = host.default_input_device() {
-            if let Ok(name) = dev.name() {
-                names.push(name);
+            if let Ok(desc) = dev.description() {
+                names.push(desc.name().to_string());
             }
         }
     }
@@ -281,14 +281,14 @@ fn list_output_devices() -> Result<Vec<String>, String> {
     let devices = host.output_devices().map_err(|e| e.to_string())?;
     let mut names = Vec::new();
     for device in devices {
-        if let Ok(name) = device.name() {
-            names.push(name);
+        if let Ok(desc) = device.description() {
+            names.push(desc.name().to_string());
         }
     }
     if names.is_empty() {
         if let Some(dev) = host.default_output_device() {
-            if let Ok(name) = dev.name() {
-                names.push(name);
+            if let Ok(desc) = dev.description() {
+                names.push(desc.name().to_string());
             }
         }
     }
@@ -309,7 +309,8 @@ fn detect_virtual_device() -> Result<Option<String>, String> {
         "loopback",
     ];
     for device in devices {
-        if let Ok(name) = device.name() {
+        if let Ok(desc) = device.description() {
+            let name = desc.name().to_string();
             let lower = name.to_lowercase();
             for kw in &virtual_keywords {
                 if lower.contains(kw) {
@@ -344,7 +345,11 @@ fn start_recording(
         let device = if let Some(ref name) = device_name {
             match host.input_devices() {
                 Ok(mut devs) => devs
-                    .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
+                    .find(|d| {
+                        d.description()
+                            .map(|desc| desc.name() == *name)
+                            .unwrap_or(false)
+                    })
                     .or_else(|| host.default_input_device()),
                 Err(_) => host.default_input_device(),
             }
