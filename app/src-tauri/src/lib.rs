@@ -38,6 +38,7 @@ fn voice_dir(lang: &str) -> &'static str {
     }
 }
 
+#[allow(clippy::zombie_processes)]
 #[tauri::command(async)]
 fn speak(text: String, lang: String, children: tauri::State<Children>) -> Result<String, String> {
     let voice = voice_dir(&lang);
