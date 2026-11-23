@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Preguntas y discusión
+    url: https://github.com/whispem/sussurro.cpp/discussions
+    about: Para preguntas generales, usar Discussions en lugar de Issues
+  - name: Documentación
+    url: https://github.com/whispem/sussurro.cpp#readme
+    about: Consultar la documentación antes de abrir un issue

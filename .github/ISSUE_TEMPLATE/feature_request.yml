@@ -1,0 +1,56 @@
+name: Feature Request
+description: Sugerir una nueva funcionalidad o mejora
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por sugerir una funcionalidad. Por favor describí tu idea con el mayor detalle posible.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema que resuelve
+      description: ¿Qué problema o necesidad motiva esta solicitud?
+      placeholder: "Como usuario, me gustaría poder... porque..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solución propuesta
+      description: Descripción de la funcionalidad que te gustaría ver.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternativas consideradas
+      description: Otras soluciones o funcionalidades que consideraste.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Prioridad
+      options:
+        - Baja
+        - Media
+        - Alta
+        - Crítica
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Busqué en issues existentes y no encontré uno similar
+          required: true
+        - label: Esta funcionalidad se alinea con el objetivo del proyecto (traducción de voz en tiempo real para reuniones)
+          required: true
