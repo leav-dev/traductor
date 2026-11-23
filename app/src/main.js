@@ -306,29 +306,56 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// ---- Voice calibration for TTS voice cloning ----
+// ---- Voice profiles for TTS voice cloning ----
 let isCalibrating = false;
+
+async function loadVoiceProfiles() {
+  try {
+    const samples = await invoke("list_voice_samples");
+    const select = document.getElementById("voice-select");
+    if (!select) return;
+    select.innerHTML = "";
+    samples.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      select.appendChild(opt);
+    });
+    // Select the active one
+    const active = await invoke("get_selected_voice");
+    if (active) {
+      for (const opt of select.options) {
+        if (opt.value === active) {
+          opt.selected = true;
+          break;
+        }
+      }
+    }
+  } catch (e) {
+    console.error("Failed to load voice profiles:", e);
+  }
+}
 
 async function startCalibration() {
   const btn = document.getElementById("calibrate-btn");
   const status = document.getElementById("calibrate-status");
+  const nameInput = document.getElementById("voice-name");
   if (isCalibrating) {
-    // Stop recording
     isCalibrating = false;
     btn.textContent = "Processing...";
     btn.disabled = true;
     try {
       await invoke("stop_recording");
-      const path = await invoke("calibrate_voice");
-      status.textContent = "Voice sample saved: " + path;
-      btn.textContent = "Record voice sample (5-30s)";
+      const name = (nameInput?.value || "default").trim();
+      const path = await invoke("calibrate_voice", { name });
+      status.textContent = "Saved: " + path;
+      await loadVoiceProfiles();
     } catch (e) {
       status.textContent = "Error: " + e;
-      btn.textContent = "Record voice sample (5-30s)";
     }
+    btn.textContent = "Record new sample (5-30s)";
     btn.disabled = false;
   } else {
-    // Start recording
     isCalibrating = true;
     btn.textContent = "Stop recording";
     status.textContent = "Recording... speak for 5-30 seconds";
@@ -338,27 +365,40 @@ async function startCalibration() {
     } catch (e) {
       status.textContent = "Error: " + e;
       isCalibrating = false;
-      btn.textContent = "Record voice sample (5-30s)";
+      btn.textContent = "Record new sample (5-30s)";
     }
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const calibrateBtn = document.getElementById("calibrate-btn");
-  if (calibrateBtn) {
-    calibrateBtn.addEventListener("click", startCalibration);
+async function deleteSelectedVoice() {
+  const select = document.getElementById("voice-select");
+  if (!select || !select.value) return;
+  try {
+    await invoke("delete_voice_sample", { name: select.value });
+    await loadVoiceProfiles();
+    document.getElementById("calibrate-status").textContent = "Deleted: " + select.value;
+  } catch (e) {
+    document.getElementById("calibrate-status").textContent = "Error: " + e;
   }
-  // Check if voice reference exists
-  (async () => {
-    try {
-      const exists = await invoke("has_voice_reference");
-      const status = document.getElementById("calibrate-status");
-      if (exists && status) {
-        const path = await invoke("get_voice_reference");
-        status.textContent = "Voice sample exists: " + path;
-      }
-    } catch (e) {
-      // ignore
-    }
-  })();
+}
+
+async function onVoiceSelectChange() {
+  const select = document.getElementById("voice-select");
+  if (!select || !select.value) return;
+  try {
+    await invoke("select_voice_sample", { name: select.value });
+    document.getElementById("calibrate-status").textContent = "Active: " + select.value;
+  } catch (e) {
+    document.getElementById("calibrate-status").textContent = "Error: " + e;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadVoiceProfiles();
+  const calibrateBtn = document.getElementById("calibrate-btn");
+  if (calibrateBtn) calibrateBtn.addEventListener("click", startCalibration);
+  const deleteBtn = document.getElementById("delete-voice-btn");
+  if (deleteBtn) deleteBtn.addEventListener("click", deleteSelectedVoice);
+  const voiceSelect = document.getElementById("voice-select");
+  if (voiceSelect) voiceSelect.addEventListener("change", onVoiceSelectChange);
 });

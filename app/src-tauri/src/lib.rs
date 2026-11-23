@@ -160,19 +160,64 @@ impl Default for Recorder {
 }
 
 #[derive(Default)]
-struct VoiceReference {
-    path: Arc<Mutex<Option<String>>>,
+struct VoiceProfiles {
+    selected: Arc<Mutex<Option<String>>>,
 }
 
-impl VoiceReference {
-    fn voice_path() -> std::path::PathBuf {
+impl VoiceProfiles {
+    fn voices_dir() -> std::path::PathBuf {
         let base = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| std::path::PathBuf::from("."));
-        base.join(".traductor").join("user_voice.wav")
+        base.join(".traductor").join("voices")
+    }
+
+    fn config_path() -> std::path::PathBuf {
+        let base = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+        base.join(".traductor").join("selected_voice.txt")
+    }
+
+    fn list_samples() -> Vec<String> {
+        let dir = Self::voices_dir();
+        if !dir.exists() {
+            return Vec::new();
+        }
+        let mut names = Vec::new();
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                if let Some(name) = entry.file_name().to_str() {
+                    if name.ends_with(".wav") {
+                        names.push(name.trim_end_matches(".wav").to_string());
+                    }
+                }
+            }
+        }
+        names.sort();
+        names
+    }
+
+    fn selected_name() -> Option<String> {
+        let path = Self::config_path();
+        if path.exists() {
+            std::fs::read_to_string(&path).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        } else {
+            None
+        }
+    }
+
+    fn set_selected(name: &str) {
+        let path = Self::config_path();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, name);
     }
 }
+
 
 
 #[tauri::command]
@@ -369,15 +414,18 @@ fn stop_recording(state: tauri::State<Recorder>) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn calibrate_voice(state: tauri::State<Recorder>, voice_ref: tauri::State<VoiceReference>) -> Result<String, String> {
-    // Reuse the recorded audio from the last stop_recording
-    // The voice sample should already be captured; save it to the voice reference path
-    let voice_path = VoiceReference::voice_path();
-    if let Some(parent) = voice_path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+fn calibrate_voice(state: tauri::State<Recorder>, profiles: tauri::State<VoiceProfiles>, name: String) -> Result<String, String> {
+    let dir = VoiceProfiles::voices_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    // Sanitize name
+    let safe_name: String = name.chars().filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+    if safe_name.is_empty() {
+        return Err("Invalid name. Use alphanumeric characters.".into());
     }
 
-    // Check if there's a recent recording
+    let voice_path = dir.join(format!("{}.wav", safe_name));
+
     let raw = state.samples.lock().unwrap().clone();
     if raw.is_empty() {
         return Err("No audio captured. Record a voice sample first (5-30 seconds).".into());
@@ -391,22 +439,56 @@ fn calibrate_voice(state: tauri::State<Recorder>, voice_ref: tauri::State<VoiceR
     };
 
     write_wav_16k(&voice_path, &samples)?;
-    let path_str = voice_path.to_string_lossy().to_string();
-    *voice_ref.path.lock().unwrap() = Some(path_str.clone());
-    Ok(path_str)
+    VoiceProfiles::set_selected(&safe_name);
+    *profiles.selected.lock().unwrap() = Some(safe_name.clone());
+    Ok(voice_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-fn has_voice_reference() -> Result<bool, String> {
-    let voice_path = VoiceReference::voice_path();
-    Ok(voice_path.exists())
+fn list_voice_samples() -> Result<Vec<String>, String> {
+    Ok(VoiceProfiles::list_samples())
 }
 
 #[tauri::command]
-fn get_voice_reference() -> Result<Option<String>, String> {
-    let voice_path = VoiceReference::voice_path();
-    if voice_path.exists() {
-        Ok(Some(voice_path.to_string_lossy().to_string()))
+fn select_voice_sample(profiles: tauri::State<VoiceProfiles>, name: String) -> Result<(), String> {
+    let samples = VoiceProfiles::list_samples();
+    if !samples.contains(&name) {
+        return Err(format!("Voice sample '{}' not found", name));
+    }
+    VoiceProfiles::set_selected(&name);
+    *profiles.selected.lock().unwrap() = Some(name);
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_voice_sample(name: String) -> Result<(), String> {
+    let dir = VoiceProfiles::voices_dir();
+    let wav = dir.join(format!("{}.wav", name));
+    let txt = dir.join(format!("{}.txt", name));
+    if wav.exists() {
+        std::fs::remove_file(&wav).map_err(|e| e.to_string())?;
+    }
+    if txt.exists() {
+        let _ = std::fs::remove_file(&txt);
+    }
+    // If deleted was selected, clear selection
+    if VoiceProfiles::selected_name().as_deref() == Some(&name) {
+        let _ = std::fs::remove_file(VoiceProfiles::config_path());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn get_selected_voice() -> Result<Option<String>, String> {
+    Ok(VoiceProfiles::selected_name())
+}
+
+#[tauri::command]
+fn get_voice_sample_path(name: String) -> Result<Option<String>, String> {
+    let dir = VoiceProfiles::voices_dir();
+    let wav = dir.join(format!("{}.wav", name));
+    if wav.exists() {
+        Ok(Some(wav.to_string_lossy().to_string()))
     } else {
         Ok(None)
     }
@@ -450,7 +532,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(Recorder::default())
         .manage(Children::default())
-        .manage(VoiceReference::default())
+        .manage(VoiceProfiles::default())
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 window.state::<Children>().kill_all();
@@ -466,8 +548,11 @@ pub fn run() {
             list_output_devices,
             detect_virtual_device,
             calibrate_voice,
-            has_voice_reference,
-            get_voice_reference
+            list_voice_samples,
+            select_voice_sample,
+            delete_voice_sample,
+            get_selected_voice,
+            get_voice_sample_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -108,12 +108,21 @@
     </details>
 
     <details class="audio-settings">
-      <summary>Voice calibration (for voice cloning)</summary>
+      <summary>Voice profiles (for voice cloning)</summary>
       <div class="device-row">
-        <button id="calibrate-btn" type="button">Record voice sample (5-30s)</button>
+        <label for="voice-name">Name</label>
+        <input id="voice-name" type="text" placeholder="e.g. John" />
+      </div>
+      <div class="device-row">
+        <button id="calibrate-btn" type="button">Record new sample (5-30s)</button>
         <span id="calibrate-status"></span>
       </div>
-      <p class="hint">Record 5-30 seconds of clean speech. The app will use your voice for translated audio output.</p>
+      <div class="device-row">
+        <label for="voice-select">Active voice</label>
+        <select id="voice-select"></select>
+        <button id="delete-voice-btn" type="button">Delete</button>
+      </div>
+      <p class="hint">Each person using this PC can record their own voice sample. Select the active voice for TTS output.</p>
     </details>
 
     </main>
