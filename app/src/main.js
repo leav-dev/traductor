@@ -242,3 +242,66 @@ document.querySelectorAll(".toggle").forEach((group) => {
 });
 
 syncLangUI();
+// ---- Audio device management ----
+const { invoke } = window.__TAURI__.core;
+
+async function loadDevices() {
+  try {
+    const inputs = await invoke("list_input_devices");
+    const outputs = await invoke("list_output_devices");
+    const inSelect = document.getElementById("input-device");
+    const outSelect = document.getElementById("output-device");
+    if (inSelect) {
+      inSelect.innerHTML = "";
+      inputs.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        inSelect.appendChild(opt);
+      });
+    }
+    if (outSelect) {
+      outSelect.innerHTML = "";
+      outputs.forEach((name) => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        outSelect.appendChild(opt);
+      });
+    }
+  } catch (e) {
+    console.error("Failed to load devices:", e);
+  }
+}
+
+async function detectVirtual() {
+  try {
+    const virtual = await invoke("detect_virtual_device");
+    const status = document.getElementById("virtual-status");
+    if (virtual) {
+      status.textContent = "Found: " + virtual;
+      const outSelect = document.getElementById("output-device");
+      if (outSelect) {
+        for (const opt of outSelect.options) {
+          if (opt.value === virtual) {
+            opt.selected = true;
+            break;
+          }
+        }
+      }
+    } else {
+      status.textContent = "No virtual device found. Install VB-Cable (Windows), BlackHole (macOS), or PulseAudio/PipeWire (Linux).";
+    }
+  } catch (e) {
+    console.error("Failed to detect virtual device:", e);
+  }
+}
+
+// Load devices on startup
+document.addEventListener("DOMContentLoaded", () => {
+  loadDevices();
+  const detectBtn = document.getElementById("detect-virtual-btn");
+  if (detectBtn) {
+    detectBtn.addEventListener("click", detectVirtual);
+  }
+});

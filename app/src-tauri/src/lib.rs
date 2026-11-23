@@ -160,7 +160,66 @@ impl Default for Recorder {
 }
 
 #[tauri::command]
-fn start_recording(state: tauri::State<Recorder>) -> Result<(), String> {
+fn list_input_devices() -> Result<Vec<String>, String> {
+    let host = cpal::default_host();
+    let devices = host.input_devices().map_err(|e| e.to_string())?;
+    let mut names = Vec::new();
+    for device in devices {
+        if let Ok(name) = device.name() {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        // Fallback: try default device name
+        if let Some(dev) = host.default_input_device() {
+            if let Ok(name) = dev.name() {
+                names.push(name);
+            }
+        }
+    }
+    Ok(names)
+}
+
+#[tauri::command]
+fn list_output_devices() -> Result<Vec<String>, String> {
+    let host = cpal::default_host();
+    let devices = host.output_devices().map_err(|e| e.to_string())?;
+    let mut names = Vec::new();
+    for device in devices {
+        if let Ok(name) = device.name() {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        if let Some(dev) = host.default_output_device() {
+            if let Ok(name) = dev.name() {
+                names.push(name);
+            }
+        }
+    }
+    Ok(names)
+}
+
+#[tauri::command]
+fn detect_virtual_device() -> Result<Option<String>, String> {
+    let host = cpal::default_host();
+    let devices = host.output_devices().map_err(|e| e.to_string())?;
+    let virtual_keywords = ["virtual", "vb-cable", "vb cable", "blackhole", "null", "dummy", "loopback"];
+    for device in devices {
+        if let Ok(name) = device.name() {
+            let lower = name.to_lowercase();
+            for kw in &virtual_keywords {
+                if lower.contains(kw) {
+                    return Ok(Some(name));
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+#[tauri::command]
+fn start_recording(state: tauri::State<Recorder>, device_name: Option<String>) -> Result<(), String> {
     if state.recording.load(Ordering::SeqCst) {
         return Err("already recording".into());
     }
@@ -176,7 +235,18 @@ fn start_recording(state: tauri::State<Recorder>) -> Result<(), String> {
 
     std::thread::spawn(move || {
         let host = cpal::default_host();
-        let device = match host.default_input_device() {
+        let device = if let Some(ref name) = device_name {
+            match host.input_devices() {
+                Ok(mut devs) => {
+                    devs.find(|d| d.name().map(|n| n == *name).unwrap_or(false))
+                        .or_else(|| host.default_input_device())
+                }
+                Err(_) => host.default_input_device(),
+            }
+        } else {
+            host.default_input_device()
+        };
+        let device = match device {
             Some(d) => d,
             None => {
                 finished.store(true, Ordering::SeqCst);
@@ -330,7 +400,10 @@ pub fn run() {
             translate,
             transcribe,
             start_recording,
-            stop_recording
+            stop_recording,
+            list_input_devices,
+            list_output_devices,
+            detect_virtual_device
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

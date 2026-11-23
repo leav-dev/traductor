@@ -91,6 +91,22 @@
         </button>
         <p class="hint" id="status">Tap to speak · or type above</p>
       </div>
+    <details class="audio-settings">
+      <summary>Audio devices</summary>
+      <div class="device-row">
+        <label for="input-device">Input (mic)</label>
+        <select id="input-device"></select>
+      </div>
+      <div class="device-row">
+        <label for="output-device">Output (speaker / virtual mic)</label>
+        <select id="output-device"></select>
+      </div>
+      <div class="device-row">
+        <button id="detect-virtual-btn" type="button">Detect virtual device</button>
+        <span id="virtual-status"></span>
+      </div>
+    </details>
+
     </main>
   </body>
 </html>

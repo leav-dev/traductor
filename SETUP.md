@@ -9,6 +9,19 @@
 - Python 3.10+ (para scripts de conversión de modelos)
 - Git
 
+## Dependencias del sistema (Linux)
+
+```bash
+# Ubuntu/Debian
+sudo apt-get install -y libpulse-dev pkg-config
+
+# Fedora
+sudo dnf install -y pulseaudio-libs-devel pkgconfig
+
+# Arch
+sudo pacman -S libpulse pkgconf
+```
+
 ## 1. Inicializar submodules (código de dependencias)
 
 ```bash
